@@ -570,6 +570,10 @@ bool Extension::LoadName(base::string16* error) {
 
 bool Extension::LoadVersion(base::string16* error) {
   std::string version_str;
+  if (manifest_->type() == Manifest::TYPE_NWJS_APP) {
+    version_.reset(new Version("0.1"));
+    return true;
+  }
   if (!manifest_->GetString(keys::kVersion, &version_str)) {
     *error = base::ASCIIToUTF16(errors::kInvalidVersion);
     return false;

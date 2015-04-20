@@ -61,7 +61,7 @@
     'app/theme/menu_overflow_down.pdf',
     'app/theme/menu_overflow_up.pdf',
     'browser/mac/install.sh',
-    '<(SHARED_INTERMEDIATE_DIR)/repack/chrome_100_percent.pak',
+    '<(SHARED_INTERMEDIATE_DIR)/repack/nw_100_percent.pak',
     '<(SHARED_INTERMEDIATE_DIR)/repack/resources.pak',
     '<!@pymod_do_main(repack_locales -o -p <(OS) -g <(grit_out_dir) -s <(SHARED_INTERMEDIATE_DIR) -x <(SHARED_INTERMEDIATE_DIR) <(locales))',
     # Note: pseudo_locales are generated via the packed_resources

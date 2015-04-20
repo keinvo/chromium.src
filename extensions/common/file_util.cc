@@ -215,7 +215,30 @@ scoped_refptr<Extension> LoadExtension(const base::FilePath& extension_path,
 
 base::DictionaryValue* LoadManifest(const base::FilePath& extension_path,
                                     std::string* error) {
-  return LoadManifest(extension_path, kManifestFilename, error);
+  base::FilePath manifest_path = extension_path.Append(kNWJSManifestFilename);
+  if (!base::PathExists(manifest_path))
+    return LoadManifest(extension_path, kManifestFilename, error);
+
+  base::DictionaryValue* manifest =
+    LoadManifest(extension_path, kNWJSManifestFilename, error);
+  if (manifest) {
+    std::string main_url, bg_script;
+    manifest->SetBoolean(manifest_keys::kNWJSFlag, true);
+    if (manifest->GetString(manifest_keys::kNWJSMain, &main_url)) {
+      scoped_ptr<base::ListValue> scripts(new base::ListValue);
+      scoped_ptr<base::ListValue> permissions(new base::ListValue);
+      scripts->AppendString("nwjs/default.js");
+      std::string bg_script;
+      if (manifest->GetString("bg-script", &bg_script))
+        scripts->AppendString(bg_script);
+
+      permissions->AppendString("developerPrivate");
+      permissions->AppendString("management");
+      manifest->Set(manifest_keys::kPlatformAppBackgroundScripts, scripts.release());
+      manifest->Set(manifest_keys::kPermissions, permissions.release());
+    }
+  }
+  return manifest;
 }
 
 base::DictionaryValue* LoadManifest(

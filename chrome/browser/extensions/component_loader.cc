@@ -460,6 +460,7 @@ void ComponentLoader::EnableBackgroundExtensionsForTesting() {
 
 void ComponentLoader::AddDefaultComponentExtensions(
     bool skip_session_components) {
+#if 0
   // Do not add component extensions that have background pages here -- add them
   // to AddDefaultComponentExtensionsWithBackgroundPages.
 #if defined(OS_CHROMEOS)
@@ -501,6 +502,9 @@ void ComponentLoader::AddDefaultComponentExtensions(
   AddKeyboardApp();
 
   AddDefaultComponentExtensionsWithBackgroundPages(skip_session_components);
+#endif
+  Add(IDR_NWJS_DEFAPP_MANIFEST,
+      base::FilePath(FILE_PATH_LITERAL("nwjs_default_app")));
 }
 
 void ComponentLoader::AddDefaultComponentExtensionsForKioskMode(

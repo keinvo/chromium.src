@@ -439,7 +439,7 @@ breakpad::CrashHandlerHostLinux* CreateCrashHandlerHost(
   PathService::Get(chrome::DIR_CRASH_DUMPS, &dumps_path);
   {
     ANNOTATE_SCOPED_MEMORY_LEAK;
-    bool upload = (getenv(env_vars::kHeadless) == NULL);
+    bool upload = false;
     breakpad::CrashHandlerHostLinux* crash_handler =
         new breakpad::CrashHandlerHostLinux(process_type, dumps_path, upload);
     crash_handler->StartUploaderThread();
@@ -535,10 +535,12 @@ class SafeBrowsingSSLCertReporter : public SSLCertReporter {
   // SSLCertReporter implementation
   void ReportInvalidCertificateChain(const std::string& hostname,
                                      const net::SSLInfo& ssl_info) override {
+#if 0
     if (safe_browsing_ui_manager_) {
       safe_browsing_ui_manager_->ReportInvalidCertificateChain(
           hostname, ssl_info, base::Bind(&base::DoNothing));
     }
+#endif
   }
 
  private:
@@ -1247,6 +1249,8 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
 #endif  // OS_POSIX && !OS_MACOSX
 
   if (process_type == switches::kRendererProcess) {
+    command_line->AppendSwitch(switches::kNWJS);
+
     content::RenderProcessHost* process =
         content::RenderProcessHost::FromID(child_process_id);
     Profile* profile =
@@ -1752,12 +1756,9 @@ void ChromeContentBrowserClient::AllowCertificateError(
   if (expired_previous_decision)
     options_mask |= SSLBlockingPage::EXPIRED_BUT_PREVIOUSLY_ALLOWED;
 
-  SafeBrowsingService* safe_browsing_service =
-      g_browser_process->safe_browsing_service();
   scoped_ptr<SafeBrowsingSSLCertReporter> cert_reporter(
-      new SafeBrowsingSSLCertReporter(safe_browsing_service
-                                          ? safe_browsing_service->ui_manager()
-                                          : nullptr));
+      new SafeBrowsingSSLCertReporter(nullptr));
+
   SSLErrorHandler::HandleSSLError(tab, cert_error, ssl_info, request_url,
                                   options_mask, cert_reporter.Pass(), callback);
 }

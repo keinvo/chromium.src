@@ -98,6 +98,11 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "v8/include/v8.h"
 
+#include "content/nw/src/nw_content.h"
+#include "content/nw/src/nw_custom_bindings.h"
+#include "third_party/node/src/node_webkit.h"
+#include "third_party/WebKit/public/web/WebScopedMicrotaskSuppression.h"
+
 using base::UserMetricsAction;
 using blink::WebDataSource;
 using blink::WebDocument;
@@ -124,9 +129,9 @@ static const char kOnSuspendCanceledEvent[] = "runtime.onSuspendCanceled";
 //
 // Note that this isn't necessarily an object, since webpages can write, for
 // example, "window.chrome = true".
-v8::Handle<v8::Value> GetOrCreateChrome(ScriptContext* context) {
+v8::Handle<v8::Value> GetOrCreateChrome(ScriptContext* context, const char* name = nullptr) {
   v8::Handle<v8::String> chrome_string(
-      v8::String::NewFromUtf8(context->isolate(), "chrome"));
+    v8::String::NewFromUtf8(context->isolate(), name ? name : "chrome"));
   v8::Handle<v8::Object> global(context->v8_context()->Global());
   v8::Handle<v8::Value> chrome(global->Get(chrome_string));
   if (chrome->IsUndefined()) {
@@ -178,6 +183,11 @@ class ChromeNativeHandler : public ObjectBackedNativeHandler {
     args.GetReturnValue().Set(GetOrCreateChrome(context()));
   }
 };
+
+int nw_uv_run(uv_loop_t* loop, uv_run_mode mode) {
+  blink::WebScopedMicrotaskSuppression suppression;
+  return uv_run(loop, mode);
+}
 
 }  // namespace
 
@@ -261,13 +271,20 @@ void Dispatcher::DidCreateScriptContext(
     v8::Handle<v8::Object> chrome = AsObjectOrEmpty(GetOrCreateChrome(context));
     if (!chrome.IsEmpty())
       module_system->SetLazyField(chrome, "Event", kEventBindings, "Event");
+
+    if (context->extension()->GetType() == Manifest::TYPE_NWJS_APP &&
+        context->context_type() == Feature::BLESSED_EXTENSION_CONTEXT) {
+
+      nw::ContextCreationHook(context);
+    }
   }
 
   UpdateBindingsForContext(context);
 
   bool is_within_platform_app = IsWithinPlatformApp();
   // Inject custom JS into the platform app context.
-  if (is_within_platform_app) {
+  if (is_within_platform_app &&
+      context->extension()->GetType() != Manifest::TYPE_NWJS_APP) {
     module_system->Require("platformApp");
   }
 
@@ -623,6 +640,8 @@ std::vector<std::pair<std::string, int> > Dispatcher::GetJsResources() {
   // Platform app sources that are not API-specific..
   resources.push_back(std::make_pair("platformApp", IDR_PLATFORM_APP_JS));
 
+  resources.push_back(std::make_pair("nw.App",    IDR_NWAPI_APP_JS));
+  resources.push_back(std::make_pair("nw.Window", IDR_NWAPI_WINDOW_JS));
   return resources;
 }
 
@@ -715,6 +734,9 @@ void Dispatcher::RegisterNativeHandlers(ModuleSystem* module_system,
       scoped_ptr<NativeHandler>(new IdGeneratorCustomBindings(context)));
   module_system->RegisterNativeHandler(
       "runtime", scoped_ptr<NativeHandler>(new RuntimeCustomBindings(context)));
+
+  module_system->RegisterNativeHandler(
+      "nw_natives", scoped_ptr<NativeHandler>(new NWCustomBindings(context)));
 }
 
 bool Dispatcher::OnControlMessageReceived(const IPC::Message& message) {
@@ -752,6 +774,7 @@ bool Dispatcher::OnControlMessageReceived(const IPC::Message& message) {
 }
 
 void Dispatcher::WebKitInitialized() {
+  node::g_nw_uv_run = nw_uv_run;
   // For extensions, we want to ensure we call the IdleHandler every so often,
   // even if the extension keeps up activity.
   if (set_idle_notifications_) {
@@ -777,6 +800,7 @@ void Dispatcher::WebKitInitialized() {
   EnableCustomElementWhiteList();
 
   is_webkit_initialized_ = true;
+
 }
 
 void Dispatcher::IdleNotification() {
@@ -888,6 +912,10 @@ void Dispatcher::OnLoaded(
     if (!extension.get()) {
       extension_load_errors_[i->id] = error;
       continue;
+    }
+    if (extension->GetType() == Manifest::TYPE_NWJS_APP) {
+      VLOG(1) << "NW: change working dir: " << extension->path().AsUTF8Unsafe();
+      base::SetCurrentDirectory(extension->path());
     }
     OnLoadedInternal(extension);
   }
@@ -1378,7 +1406,13 @@ v8::Handle<v8::Object> Dispatcher::GetOrCreateBindObjectIfAvailable(
   std::string ancestor_name;
   bool only_ancestor_available = false;
 
-  for (size_t i = 0; i < split.size() - 1; ++i) {
+  const char* prefix = nullptr;
+  int start = 0;
+  if (split[0] == "nw") {
+    prefix = "nw";
+    start = 1;
+  }
+  for (size_t i = start; i < split.size() - 1; ++i) {
     ancestor_name += (i ? "." : "") + split[i];
     if (api_feature_provider->GetFeature(ancestor_name) &&
         context->GetAvailability(ancestor_name).is_available() &&
@@ -1388,7 +1422,7 @@ v8::Handle<v8::Object> Dispatcher::GetOrCreateBindObjectIfAvailable(
     }
 
     if (bind_object.IsEmpty()) {
-      bind_object = AsObjectOrEmpty(GetOrCreateChrome(context));
+      bind_object = AsObjectOrEmpty(GetOrCreateChrome(context, prefix));
       if (bind_object.IsEmpty())
         return v8::Handle<v8::Object>();
     }
@@ -1401,7 +1435,7 @@ v8::Handle<v8::Object> Dispatcher::GetOrCreateBindObjectIfAvailable(
   if (bind_name)
     *bind_name = split.back();
 
-  return bind_object.IsEmpty() ? AsObjectOrEmpty(GetOrCreateChrome(context))
+  return bind_object.IsEmpty() ? AsObjectOrEmpty(GetOrCreateChrome(context, prefix))
                                : bind_object;
 }
 

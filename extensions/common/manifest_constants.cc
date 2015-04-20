@@ -180,7 +180,8 @@ const char kWebviewAccessibleResources[] = "accessible_resources";
 const char kWebviewName[] = "name";
 const char kWebviewPartitions[] = "partitions";
 const char kWhitelist[] = "whitelist";
-
+const char kNWJSFlag[] = "__nwjs_manifest";
+const char kNWJSMain[] = "main";
 }  // namespace manifest_keys
 
 namespace manifest_values {
